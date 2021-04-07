@@ -5,6 +5,8 @@ import './helpers/LineChart.dart';
 import './helpers/PaintStyle.dart';
 
 class BackgroundCollectedPage extends StatelessWidget {
+  get argumentsLabelsTimestamps => null;
+
   @override
   Widget build(BuildContext context) {
     final BackgroundCollectingTask task =
@@ -12,14 +14,14 @@ class BackgroundCollectedPage extends StatelessWidget {
 
     // Arguments shift is needed for timestamps as miliseconds in double could loose precision.
     final int argumentsShift =
-        task.samples.first.timestamp.millisecondsSinceEpoch;
+        task.samples.first.timestamp.toInt();
 
     final Duration showDuration =
         Duration(hours: 2); // @TODO . show duration should be configurable
     final Iterable<DataSample> lastSamples = task.getLastOf(showDuration);
 
     final Iterable<double> arguments = lastSamples.map((sample) {
-      return (sample.timestamp.millisecondsSinceEpoch - argumentsShift)
+      return (sample.timestamp.toInt() - argumentsShift)
           .toDouble();
     });
 
@@ -27,25 +29,8 @@ class BackgroundCollectedPage extends StatelessWidget {
     final Duration argumentsStep =
         Duration(minutes: 15); // @TODO . step duration should be configurable
 
-    // Find first timestamp floored to step before
-    final DateTime beginningArguments = lastSamples.first.timestamp;
-    DateTime beginningArgumentsStep = DateTime(beginningArguments.year,
-        beginningArguments.month, beginningArguments.day);
-    while (beginningArgumentsStep.isBefore(beginningArguments)) {
-      beginningArgumentsStep = beginningArgumentsStep.add(argumentsStep);
-    }
-    beginningArgumentsStep = beginningArgumentsStep.subtract(argumentsStep);
-    final DateTime endingArguments = lastSamples.last.timestamp;
 
-    // Generate list of timestamps of labels
-    final Iterable<DateTime> argumentsLabelsTimestamps = () sync* {
-      DateTime timestamp = beginningArgumentsStep;
-      yield timestamp;
-      while (timestamp.isBefore(endingArguments)) {
-        timestamp = timestamp.add(argumentsStep);
-        yield timestamp;
-      }
-    }();
+   
 
     // Map strings for labels
     final Iterable<LabelEntry> argumentsLabels =

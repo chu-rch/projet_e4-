@@ -117,7 +117,7 @@ class BackgroundCollectingTask extends Model {
       if (i <= 0) {
         break;
       }
-    } while (samples[i].timestamp.isAfter(startingTime));
+    } while (samples[i].timestamp.toDouble());
     return samples.getRange(i, samples.length);
   }
 }
