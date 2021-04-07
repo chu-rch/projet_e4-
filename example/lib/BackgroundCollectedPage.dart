@@ -1,50 +1,63 @@
 import 'package:flutter/material.dart';
-import 'package:oscilloscope/oscilloscope.dart';
+
 import './BackgroundCollectingTask.dart';
 import './helpers/LineChart.dart';
 import './helpers/PaintStyle.dart';
 
 class BackgroundCollectedPage extends StatelessWidget {
-  get argumentsLabelsTimestamps => null;
-
   @override
   Widget build(BuildContext context) {
     final BackgroundCollectingTask task =
-        BackgroundCollectingTask.of(context, rebuildOnChange: true);
+    BackgroundCollectingTask.of(context, rebuildOnChange: true);
 
     // Arguments shift is needed for timestamps as miliseconds in double could loose precision.
-    final int argumentsShift =
-        task.samples.first.timestamp.toInt();
+    //final int argumentsShift =
+        //task.samples.first.timestamp.millisecondsSinceEpoch;
 
     final Duration showDuration =
-        Duration(hours: 2); // @TODO . show duration should be configurable
+    Duration(seconds: 1); // @TODO . show duration should be configurable
     final Iterable<DataSample> lastSamples = task.getLastOf(showDuration);
 
     final Iterable<double> arguments = lastSamples.map((sample) {
-      return (sample.timestamp.toInt() - argumentsShift)
+      return (sample.timestamp.millisecondsSinceEpoch)
           .toDouble();
     });
 
     // Step for argument labels
     final Duration argumentsStep =
-        Duration(minutes: 15); // @TODO . step duration should be configurable
+    Duration(milliseconds: 500); // @TODO . step duration should be configurable
 
+    // Find first timestamp floored to step before
+    final DateTime beginningArguments = lastSamples.first.timestamp;
+    DateTime beginningArgumentsStep = DateTime(beginningArguments.year,
+        beginningArguments.month, beginningArguments.day);
+    while (beginningArgumentsStep.isBefore(beginningArguments)) {
+      beginningArgumentsStep = beginningArgumentsStep.add(argumentsStep);
+    }
+    beginningArgumentsStep = beginningArgumentsStep.subtract(argumentsStep);
+    final DateTime endingArguments = lastSamples.last.timestamp;
 
-   
+    // Generate list of timestamps of labels
+    final Iterable<DateTime> argumentsLabelsTimestamps = () sync* {
+      DateTime timestamp = beginningArgumentsStep;
+      yield timestamp;
+      while (timestamp.isBefore(endingArguments)) {
+        timestamp = timestamp.add(argumentsStep);
+        yield timestamp;
+      }
+    }();
 
     // Map strings for labels
     final Iterable<LabelEntry> argumentsLabels =
-        argumentsLabelsTimestamps.map((timestamp) {
+    argumentsLabelsTimestamps.map((timestamp) {
       return LabelEntry(
-          (timestamp.millisecondsSinceEpoch - argumentsShift).toDouble(),
+          (timestamp.millisecondsSinceEpoch).toDouble(),
           ((timestamp.hour <= 9 ? '0' : '') +
               timestamp.hour.toString() +
               ':' +
               (timestamp.minute <= 9 ? '0' : '') +
               timestamp.minute.toString()));
     });
-
-
 
     return Scaffold(
         appBar: AppBar(
@@ -53,17 +66,17 @@ class BackgroundCollectedPage extends StatelessWidget {
             // Progress circle
             (task.inProgress
                 ? FittedBox(
-                    child: Container(
-                        margin: new EdgeInsets.all(16.0),
-                        child: CircularProgressIndicator(
-                            valueColor:
-                                AlwaysStoppedAnimation<Color>(Colors.white))))
+                child: Container(
+                    margin: new EdgeInsets.all(16.0),
+                    child: CircularProgressIndicator(
+                        valueColor:
+                        AlwaysStoppedAnimation<Color>(Colors.white))))
                 : Container(/* Dummy */)),
             // Start/stop buttons
             (task.inProgress
                 ? IconButton(icon: Icon(Icons.pause), onPressed: task.pause)
                 : IconButton(
-                    icon: Icon(Icons.play_arrow), onPressed: task.reasume)),
+                icon: Icon(Icons.play_arrow), onPressed: task.reasume)),
           ],
         ),
         body: ListView(
@@ -71,88 +84,93 @@ class BackgroundCollectedPage extends StatelessWidget {
             Divider(),
             ListTile(
               leading: const Icon(Icons.brightness_7),
-              title: const Text('Axe X'),
+              title: const Text('Temperatures'),
+
             ),
-            LineChart( /*faire 3 line chart different separes par divider et list title*/
+            LineChart(
               constraints: const BoxConstraints.expand(height: 350),
               arguments: arguments,
               argumentsLabels: argumentsLabels,
               values: [
-                lastSamples.map((sample) => sample.X_AXIS),
+                lastSamples.map((sample) => sample.X),
               ],
-              valuesLabels: [
-              ],
-              verticalLinesStyle: const PaintStyle(color: Colors.red),
+              verticalLinesStyle: const PaintStyle(color: Colors.grey),
               additionalMinimalHorizontalLabelsInterval: 0,
               additionalMinimalVerticalLablesInterval: 0,
               seriesPointsStyles: [
                 null,
+
                 //const PaintStyle(style: PaintingStyle.stroke, strokeWidth: 1.7*3, color: Colors.indigo, strokeCap: StrokeCap.round),
               ],
               seriesLinesStyles: [
                 const PaintStyle(
                     style: PaintingStyle.stroke,
                     strokeWidth: 1.7,
-                    color: Colors.redAccent),
+                    color: Colors.indigoAccent),
+
               ],
             ),
             Divider(),
             ListTile(
-              leading: const Icon(Icons.brightness_7),
-              title: const Text('Axe Y'),
+              leading: const Icon(Icons.filter_vintage),
+              title: const Text('Water pH level'),
             ),
-            LineChart( /*faire 3 line chart different separes par divider et list title*/
+            LineChart(
               constraints: const BoxConstraints.expand(height: 350),
               arguments: arguments,
               argumentsLabels: argumentsLabels,
               values: [
-              lastSamples.map((sample) => sample.Y_AXIS),
-              ],
-              valuesLabels: [
+                lastSamples.map((sample) => sample.Y),
+
               ],
               verticalLinesStyle: const PaintStyle(color: Colors.grey),
               additionalMinimalHorizontalLabelsInterval: 0,
               additionalMinimalVerticalLablesInterval: 0,
               seriesPointsStyles: [
-              null,
-              //const PaintStyle(style: PaintingStyle.stroke, strokeWidth: 1.7*3, color: Colors.indigo, strokeCap: StrokeCap.round),
+                null,
+
+                //const PaintStyle(style: PaintingStyle.stroke, strokeWidth: 1.7*3, color: Colors.indigo, strokeCap: StrokeCap.round),
               ],
               seriesLinesStyles: [
-              const PaintStyle(
-              style: PaintingStyle.stroke,
-              strokeWidth: 1.7,
-              color: Colors.blueGrey),
-              ]
+                const PaintStyle(
+                    style: PaintingStyle.stroke,
+                    strokeWidth: 1.7,
+                    color: Colors.indigoAccent),
+
+              ],
             ),
             Divider(),
             ListTile(
-              leading: const Icon(Icons.brightness_7),
-              title: const Text('Axe_Z'),
+              leading: const Icon(Icons.filter_vintage),
+              title: const Text('Water pH level'),
             ),
-            LineChart( /*faire 3 line chart different separes par divider et list title*/
-                constraints: const BoxConstraints.expand(height: 350),
-                arguments: arguments,
-                argumentsLabels: argumentsLabels,
-                values: [
-                  lastSamples.map((sample) => sample.Z_AXIS),
-                ],
-                valuesLabels: [
-                ],
-                verticalLinesStyle: const PaintStyle(color: Colors.blue),
-                additionalMinimalHorizontalLabelsInterval: 0,
-                additionalMinimalVerticalLablesInterval: 0,
-                seriesPointsStyles: [
-                  null,
-                  //const PaintStyle(style: PaintingStyle.stroke, strokeWidth: 1.7*3, color: Colors.indigo, strokeCap: StrokeCap.round),
-                ],
-                seriesLinesStyles: [
-                  const PaintStyle(
-                      style: PaintingStyle.stroke,
-                      strokeWidth: 1.7,
-                      color: Colors.blueAccent),
-                ]
-            )
-          ],
-        ));
+            LineChart(
+              constraints: const BoxConstraints.expand(height: 350),
+              arguments: arguments,
+              argumentsLabels: argumentsLabels,
+              values: [
+                lastSamples.map((sample) => sample.Z),
+
+              ],
+              verticalLinesStyle: const PaintStyle(color: Colors.grey),
+              additionalMinimalHorizontalLabelsInterval: 0,
+              additionalMinimalVerticalLablesInterval: 0,
+              seriesPointsStyles: [
+                null,
+
+                //const PaintStyle(style: PaintingStyle.stroke, strokeWidth: 1.7*3, color: Colors.indigo, strokeCap: StrokeCap.round),
+              ],
+              seriesLinesStyles: [
+                const PaintStyle(
+                    style: PaintingStyle.stroke,
+                    strokeWidth: 1.7,
+                    color: Colors.indigoAccent),
+
+              ],
+            ),
+              ],
+            ),
+        );
+
   }
 }

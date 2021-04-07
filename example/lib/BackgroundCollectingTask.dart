@@ -4,24 +4,24 @@ import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart';
 import 'package:scoped_model/scoped_model.dart';
 
 class DataSample {
-  double X_AXIS;
-  double Y_AXIS;
-  double Z_AXIS;
-  double timestamp;
+  double X;
+  double Y;
+  double Z;
+  DateTime timestamp;
 
   DataSample({
-    this.X_AXIS,
-    this.Y_AXIS,
-    this.Z_AXIS,
+    this.X,
+    this.Y,
+    this.Z,
     this.timestamp,
   });
 }
 
 class BackgroundCollectingTask extends Model {
   static BackgroundCollectingTask of(
-    BuildContext context, {
-    bool rebuildOnChange = false,
-  }) =>
+      BuildContext context, {
+        bool rebuildOnChange = false,
+      }) =>
       ScopedModel.of<BackgroundCollectingTask>(
         context,
         rebuildOnChange: rebuildOnChange,
@@ -45,17 +45,17 @@ class BackgroundCollectingTask extends Model {
       while (true) {
         // If there is a sample, and it is full sent
         int index = _buffer.indexOf('t'.codeUnitAt(0));
-        if (index >= 0 && _buffer.length - index >= 9) {
+        if (index >= 0 && _buffer.length - index >= 7) {
           final DataSample sample = DataSample(
-              X_AXIS: (_buffer[index + 1] + _buffer[index + 2] / 100),
-              Y_AXIS: (_buffer[index + 3] + _buffer[index + 4] / 100),
-              Z_AXIS: (_buffer[index + 5] + _buffer[index + 6] / 100),
-              timestamp: (_buffer[index + 7] + _buffer[index + 8] / 100));
-          _buffer.removeRange(0, index + 9);
+              X: (_buffer[index + 1] + _buffer[index + 2] / 100),
+              Y: (_buffer[index + 3] + _buffer[index + 4] / 100),
+              Z: (_buffer[index + 5] + _buffer[index + 6] / 100),
+              timestamp: DateTime.now());
+          _buffer.removeRange(0, index + 7);
 
           samples.add(sample);
           notifyListeners(); // Note: It shouldn't be invoked very often - in this example data comes at every second, but if there would be more data, it should update (including repaint of graphs) in some fixed interval instead of after every sample.
-          //print("${sample.timestamp.toString()} -> ${sample.X_AXIS} / ${sample.Y_AXIS}");
+          //print("${sample.timestamp.toString()} -> ${sample.temperature1} / ${sample.temperature2}");
         }
         // Otherwise break
         else {
@@ -71,7 +71,7 @@ class BackgroundCollectingTask extends Model {
   static Future<BackgroundCollectingTask> connect(
       BluetoothDevice server) async {
     final BluetoothConnection connection =
-        await BluetoothConnection.toAddress(server.address);
+    await BluetoothConnection.toAddress(server.address);
     return BackgroundCollectingTask._fromConnection(connection);
   }
 
@@ -117,7 +117,7 @@ class BackgroundCollectingTask extends Model {
       if (i <= 0) {
         break;
       }
-    } while (samples[i].timestamp.toDouble());
+    } while (samples[i].timestamp.isAfter(startingTime));
     return samples.getRange(i, samples.length);
   }
 }
