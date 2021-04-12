@@ -1,4 +1,5 @@
 
+import 'dart:ffi';
 import 'dart:typed_data';
 import 'dart:convert';
 import 'dart:async';
@@ -28,6 +29,9 @@ class BackgroundCollectedPage extends StatefulWidget {
     bool isDisconnecting = false;
     int _count = 0;
 
+    List<int> _buffer;
+
+
 
     @override
     void initState() {
@@ -41,13 +45,15 @@ class BackgroundCollectedPage extends StatefulWidget {
           isDisconnecting = false;
         });
 
-        connection.input.listen((Uint8List data) {
+        connection.input.listen(_onDataReceived).onDone(() {
           // Example: Detect which side closed the connection
           // There should be `isDisconnecting` flag to show are we are (locally)
           // in middle of disconnecting process, should be set before calling
           // `dispose`, `finish` or `close`, which all causes to disconnect.
           // If we except the disconnection, `onDone` should be fired as result.
           // If we didn't except this (no flag set), it means closing by remote.
+
+
           if (isDisconnecting) {
             print('Disconnecting locally!');
           } else {
@@ -56,6 +62,8 @@ class BackgroundCollectedPage extends StatefulWidget {
           if (this.mounted) {
             setState(() {});
           }
+
+
         });
       }).catchError((error) {
         print('Cannot connect, exception occured');
@@ -75,7 +83,7 @@ class BackgroundCollectedPage extends StatefulWidget {
       super.dispose();
     }
 
-    void _onDataReceived(Uint8List data) {
+    void _onDataReceived(Uint8List data) { // conversion ici <-----
       // Allocate buffer for parsed data
       int backspacesCounter = 0;
       data.forEach((byte) {
@@ -98,7 +106,13 @@ class BackgroundCollectedPage extends StatefulWidget {
             buffer[--bufferIndex] = data[i];
           }
         }
+
       }
+
+      String dataString = String.fromCharCodes(buffer);
+      _buffer.add(int.parse(dataString.substring(0, bufferIndex)));
+
+
     }
 
     void _sendMessage(String text) async {
@@ -113,26 +127,23 @@ class BackgroundCollectedPage extends StatefulWidget {
       }
     }
 
-    dynamic getColumnData(StreamSubscription data) {
-      List<int> _buffer = List<int>();
+     dynamic getColumnData(Uint8List _buffer) {
 
-      _buffer += data;
+        while (true) {
+          int index = _buffer.indexOf("0".codeUnitAt(0));
+          if (index >= 0 && _buffer.length - index > 10) {
+            final accData dataSample = accData(
+                X: _buffer.sublist(index + 1, index + 3),
+                Y: _buffer.sublist(index + 4, index + 6),
+                Z: _buffer.getRange(index + 8, index + 10),
+                time: _buffer.sublist(index + 10)
+            );
+            _buffer.removeRange(0, index + 10);
 
-      while (true) {
-        int index = _buffer.indexOf("0".codeUnitAt(0));
-        if (index >= 0 && _buffer.length - index > 10) {
-          final accData dataSample = accData(
-              X: _buffer.sublist(index + 1, index + 3),
-              Y: _buffer.sublist(index + 4, index + 6),
-              Z: _buffer.getRange(index + 8, index + 10),
-              time: _buffer.sublist(index + 10)
-          );
-          _buffer.removeRange(0, index + 10);
-
-          print(dataSample);
-          return dataSample;
+            print(dataSample);
+            return dataSample;
+          }
         }
-      }
 
     }
 
@@ -154,7 +165,7 @@ class BackgroundCollectedPage extends StatefulWidget {
                         primaryXAxis: CategoryAxis(),
                         series: <ChartSeries>[
                          SplineSeries<accData,int>(
-                             dataSource: getColumnData(data),
+                             dataSource: getColumnData(_buffer),
                              xValueMapper: (accData dataSample, _) => dataSample.X[0],
                              yValueMapper: (accData dataSample, _) => dataSample.time[0],
                          )
@@ -219,3 +230,5 @@ class BackgroundCollectedPage extends StatefulWidget {
 
 
   }
+
+
