@@ -1,176 +1,221 @@
+
+import 'dart:typed_data';
+import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart';
+import 'package:syncfusion_flutter_charts/charts.dart';
+import 'package:syncfusion_flutter_charts/sparkcharts.dart';
 
-import './BackgroundCollectingTask.dart';
-import './helpers/LineChart.dart';
-import './helpers/PaintStyle.dart';
+class BackgroundCollectedPage extends StatefulWidget {
+  final BluetoothDevice server;
+  const BackgroundCollectedPage({this.server});
 
-class BackgroundCollectedPage extends StatelessWidget {
   @override
-  Widget build(BuildContext context) {
-    final BackgroundCollectingTask task =
-    BackgroundCollectingTask.of(context, rebuildOnChange: true);
+  _BackgroundCollectedPage createState() => new _BackgroundCollectedPage();
+  }
 
-    // Arguments shift is needed for timestamps as miliseconds in double could loose precision.
-    //final int argumentsShift =
-        //task.samples.first.timestamp.millisecondsSinceEpoch;
 
-    final Duration showDuration =
-    Duration(seconds: 1); // @TODO . show duration should be configurable
-    final Iterable<DataSample> lastSamples = task.getLastOf(showDuration);
+  class _BackgroundCollectedPage extends State<BackgroundCollectedPage> {
 
-    final Iterable<double> arguments = lastSamples.map((sample) {
-      return (sample.timestamp.millisecondsSinceEpoch)
-          .toDouble();
-    });
+    static final clientID = 0;
+    BluetoothConnection connection;
+    String _messageBuffer = '';
+    bool isConnecting = true;
 
-    // Step for argument labels
-    final Duration argumentsStep =
-    Duration(milliseconds: 500); // @TODO . step duration should be configurable
 
-    // Find first timestamp floored to step before
-    final DateTime beginningArguments = lastSamples.first.timestamp;
-    DateTime beginningArgumentsStep = DateTime(beginningArguments.year,
-        beginningArguments.month, beginningArguments.day);
-    while (beginningArgumentsStep.isBefore(beginningArguments)) {
-      beginningArgumentsStep = beginningArgumentsStep.add(argumentsStep);
+    bool get isConnected => connection != null && connection.isConnected;
+    bool isDisconnecting = false;
+    int _count = 0;
+
+
+    @override
+    void initState() {
+      super.initState();
+
+      BluetoothConnection.toAddress(widget.server.address).then((_connection) {
+        print('Connected to the device');
+        connection = _connection;
+        setState(() {
+          isConnecting = false;
+          isDisconnecting = false;
+        });
+
+        connection.input.listen((Uint8List data) {
+          // Example: Detect which side closed the connection
+          // There should be `isDisconnecting` flag to show are we are (locally)
+          // in middle of disconnecting process, should be set before calling
+          // `dispose`, `finish` or `close`, which all causes to disconnect.
+          // If we except the disconnection, `onDone` should be fired as result.
+          // If we didn't except this (no flag set), it means closing by remote.
+          if (isDisconnecting) {
+            print('Disconnecting locally!');
+          } else {
+            print('Disconnected remotely!');
+          }
+          if (this.mounted) {
+            setState(() {});
+          }
+        });
+      }).catchError((error) {
+        print('Cannot connect, exception occured');
+        print(error);
+      });
     }
-    beginningArgumentsStep = beginningArgumentsStep.subtract(argumentsStep);
-    final DateTime endingArguments = lastSamples.last.timestamp;
 
-    // Generate list of timestamps of labels
-    final Iterable<DateTime> argumentsLabelsTimestamps = () sync* {
-      DateTime timestamp = beginningArgumentsStep;
-      yield timestamp;
-      while (timestamp.isBefore(endingArguments)) {
-        timestamp = timestamp.add(argumentsStep);
-        yield timestamp;
+    @override
+    void dispose() {
+      // Avoid memory leak (`setState` after dispose) and disconnect
+      if (isConnected) {
+        isDisconnecting = true;
+        connection.dispose();
+        connection = null;
       }
-    }();
 
-    // Map strings for labels
-    final Iterable<LabelEntry> argumentsLabels =
-    argumentsLabelsTimestamps.map((timestamp) {
-      return LabelEntry(
-          (timestamp.millisecondsSinceEpoch).toDouble(),
-          ((timestamp.hour <= 9 ? '0' : '') +
-              timestamp.hour.toString() +
-              ':' +
-              (timestamp.minute <= 9 ? '0' : '') +
-              timestamp.minute.toString()));
-    });
+      super.dispose();
+    }
 
-    return Scaffold(
+    void _onDataReceived(Uint8List data) {
+      // Allocate buffer for parsed data
+      int backspacesCounter = 0;
+      data.forEach((byte) {
+        if (byte == 8 || byte == 127) {
+          backspacesCounter++;
+        }
+      });
+      Uint8List buffer = Uint8List(data.length - backspacesCounter);
+      int bufferIndex = buffer.length;
+
+      // Apply backspace control character
+      backspacesCounter = 0;
+      for (int i = data.length - 1; i >= 0; i--) {
+        if (data[i] == 8 || data[i] == 127) {
+          backspacesCounter++;
+        } else {
+          if (backspacesCounter > 0) {
+            backspacesCounter--;
+          } else {
+            buffer[--bufferIndex] = data[i];
+          }
+        }
+      }
+    }
+
+    void _sendMessage(String text) async {
+      if (text.length > 0) {
+        try {
+          connection.output.add(utf8.encode(text));
+          await connection.output.allSent;
+        } catch (e) {
+          // Ignore error, but notify state
+          setState(() {});
+        }
+      }
+    }
+
+    dynamic getColumnData(StreamSubscription data) {
+      List<int> _buffer = List<int>();
+
+      _buffer += data;
+
+      while (true) {
+        int index = _buffer.indexOf("0".codeUnitAt(0));
+        if (index >= 0 && _buffer.length - index > 10) {
+          final accData dataSample = accData(
+              X: _buffer.sublist(index + 1, index + 3),
+              Y: _buffer.sublist(index + 4, index + 6),
+              Z: _buffer.getRange(index + 8, index + 10),
+              time: _buffer.sublist(index + 10)
+          );
+          _buffer.removeRange(0, index + 10);
+
+          print(dataSample);
+          return dataSample;
+        }
+      }
+
+    }
+
+    Widget build(BuildContext context) {
+      return Scaffold(
         appBar: AppBar(
-          title: Text('Collected data'),
-          actions: <Widget>[
-            // Progress circle
-            (task.inProgress
-                ? FittedBox(
-                child: Container(
-                    margin: new EdgeInsets.all(16.0),
-                    child: CircularProgressIndicator(
-                        valueColor:
-                        AlwaysStoppedAnimation<Color>(Colors.white))))
-                : Container(/* Dummy */)),
-            // Start/stop buttons
-            (task.inProgress
-                ? IconButton(icon: Icon(Icons.pause), onPressed: task.pause)
-                : IconButton(
-                icon: Icon(Icons.play_arrow), onPressed: task.reasume)),
-          ],
+            title: (isConnecting
+                ? Text('Connecting to ' + widget.server.name + '...')
+                : isConnected
+                ? Text('Live plot with ' + widget.server.name)
+                : Text('plot log with ' + widget.server.name))
         ),
-        body: ListView(
-          children: <Widget>[
-            Divider(),
-            ListTile(
-              leading: const Icon(Icons.brightness_7),
-              title: const Text('Temperatures'),
+        body: Center(
+                   child: Column(
+                    children: [
+                      Container(
+                        child: SfCartesianChart(
+                        isTransposed: true,
+                        primaryXAxis: CategoryAxis(),
+                        series: <ChartSeries>[
+                         SplineSeries<accData,int>(
+                             dataSource: getColumnData(data),
+                             xValueMapper: (accData dataSample, _) => dataSample.X[0],
+                             yValueMapper: (accData dataSample, _) => dataSample.time[0],
+                         )
+                       ]
+                      )
+                      ),
+                      Container(
+                        child: SfCartesianChart(
+                          primaryXAxis: CategoryAxis(
+                          ),
+                          /*
+                                series:
+                                dataSource:
+                                xValueMapper:
+                                yValueMapper:
+                          */
+                        ),
 
-            ),
-            LineChart(
-              constraints: const BoxConstraints.expand(height: 350),
-              arguments: arguments,
-              argumentsLabels: argumentsLabels,
-              values: [
-                lastSamples.map((sample) => sample.X),
-              ],
-              verticalLinesStyle: const PaintStyle(color: Colors.grey),
-              additionalMinimalHorizontalLabelsInterval: 0,
-              additionalMinimalVerticalLablesInterval: 0,
-              seriesPointsStyles: [
-                null,
 
-                //const PaintStyle(style: PaintingStyle.stroke, strokeWidth: 1.7*3, color: Colors.indigo, strokeCap: StrokeCap.round),
-              ],
-              seriesLinesStyles: [
-                const PaintStyle(
-                    style: PaintingStyle.stroke,
-                    strokeWidth: 1.7,
-                    color: Colors.indigoAccent),
+                      ),
 
-              ],
-            ),
-            Divider(),
-            ListTile(
-              leading: const Icon(Icons.filter_vintage),
-              title: const Text('Water pH level'),
-            ),
-            LineChart(
-              constraints: const BoxConstraints.expand(height: 350),
-              arguments: arguments,
-              argumentsLabels: argumentsLabels,
-              values: [
-                lastSamples.map((sample) => sample.Y),
+                     Container(
+                       child: SfCartesianChart(
+                         primaryXAxis: CategoryAxis(
+                         ),
+                         /*
+                                series:
+                                dataSource:
+                                xValueMapper:
+                                yValueMapper:
+                          */
+                       ),
 
-              ],
-              verticalLinesStyle: const PaintStyle(color: Colors.grey),
-              additionalMinimalHorizontalLabelsInterval: 0,
-              additionalMinimalVerticalLablesInterval: 0,
-              seriesPointsStyles: [
-                null,
 
-                //const PaintStyle(style: PaintingStyle.stroke, strokeWidth: 1.7*3, color: Colors.indigo, strokeCap: StrokeCap.round),
-              ],
-              seriesLinesStyles: [
-                const PaintStyle(
-                    style: PaintingStyle.stroke,
-                    strokeWidth: 1.7,
-                    color: Colors.indigoAccent),
+                     ),
+                    ],
+                  ),
 
-              ],
-            ),
-            Divider(),
-            ListTile(
-              leading: const Icon(Icons.filter_vintage),
-              title: const Text('Water pH level'),
-            ),
-            LineChart(
-              constraints: const BoxConstraints.expand(height: 350),
-              arguments: arguments,
-              argumentsLabels: argumentsLabels,
-              values: [
-                lastSamples.map((sample) => sample.Z),
-
-              ],
-              verticalLinesStyle: const PaintStyle(color: Colors.grey),
-              additionalMinimalHorizontalLabelsInterval: 0,
-              additionalMinimalVerticalLablesInterval: 0,
-              seriesPointsStyles: [
-                null,
-
-                //const PaintStyle(style: PaintingStyle.stroke, strokeWidth: 1.7*3, color: Colors.indigo, strokeCap: StrokeCap.round),
-              ],
-              seriesLinesStyles: [
-                const PaintStyle(
-                    style: PaintingStyle.stroke,
-                    strokeWidth: 1.7,
-                    color: Colors.indigoAccent),
-
-              ],
-            ),
-              ],
-            ),
+              )
         );
 
+
+    }
+    /*
+    List<String> dataList = data.split(':');
+      for(String s in datalist){
+        int a=int.parse(s);
+        print(a);
+      }
+     */
+
+
   }
-}
+
+  class accData{
+    Uint8List X;
+    Uint8List Y;
+    Uint8List Z;
+    Uint8List time;
+
+    accData({this.X,this.Y,this.Z,this.time});
+
+
+  }
